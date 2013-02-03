@@ -15,12 +15,7 @@ struct procedure
     struct lisp_object* (*opPointer)(struct lisp_object *);
 };
 
-struct cons{
-    struct lisp_object * current;
-    struct lisp_object * next;
-};
-
-struct cons new_cons(struct lisp_object *, struct lisp_object *);
+struct cons *new_cons(struct lisp_object, struct lisp_object *);
 
 struct lisp_object
 {
@@ -30,7 +25,11 @@ struct lisp_object
     int boolD;
     char charD;
     struct procedure *proc;
-    struct cons pairD;
+    struct cons *pairD;
+};
+struct cons{
+    struct lisp_object current;
+    struct lisp_object * next;
 };
 
 struct lisp_object lisp_read();
@@ -43,7 +42,7 @@ struct lisp_object  new_string_object(char *);
 struct lisp_object  new_bool_object(int);
 struct lisp_object  new_char_object(char);
 struct lisp_object  new_proc_object(char *,struct lisp_object* (struct lisp_object *));
-struct lisp_object  new_pair_object(struct lisp_object *,struct lisp_object*);
+struct lisp_object  new_pair_object(struct lisp_object ,struct lisp_object*);
 
 struct lisp_object  add      (struct lisp_object a,struct lisp_object b){return new_num_object(a.numD + b.numD);}
 struct lisp_object  subtract (struct lisp_object a,struct lisp_object b){return new_num_object(a.numD - b.numD);}
@@ -53,8 +52,9 @@ struct lisp_object  divide   (struct lisp_object a,struct lisp_object b){return 
 struct lisp_object car (struct lisp_object);
 struct lisp_object cdr (struct lisp_object);
 
-char *removeWhitesapce(char *);  // I am a twat.
+char *removeWhitesapce(char *);  // I am a twat. I know.
 
+struct lisp_object * splitString(char *,int);
 struct lisp_object listeriseString(char *);
 
 int * bracketMatcher(char *);
@@ -131,7 +131,7 @@ struct lisp_object lisp_eval(struct lisp_object objEval)
 
 struct lisp_object car(struct lisp_object a){
     if(a.objectType ==T_pair){
-        return (*a.pairD.current);
+        return (*a.pairD).current;
     }else{
         return a;
     }
@@ -139,7 +139,14 @@ struct lisp_object car(struct lisp_object a){
 
 struct lisp_object cdr(struct lisp_object a){
     if(a.objectType ==T_pair){
-        return (*a.pairD.next);
+        if(!(*a.pairD).next){
+            printf("Got to NULL\n");
+            return new_string_object("NULL");
+
+        }else{
+           printf("sup\n");
+           return *(*a.pairD).next;
+        }
     }else{
         return a;
     }
@@ -177,8 +184,7 @@ struct lisp_object lisp_read(){
     stringBuffer = removeWhitesapce(stringBuffer);
     stringBuffer = removeWhitesapce(stringBuffer);
 
-    listeriseString(stringBuffer);
-    return new_num_object(0);
+    return listeriseString(stringBuffer);
 }
 struct lisp_object listeriseString(char * current){
 
@@ -186,16 +192,18 @@ struct lisp_object listeriseString(char * current){
     bM = bracketMatcher(current);
     int *unProtSpaceLoc = NULL;
     int i,d = 0;
-    struct lisp_object * stringArray;
-    //printf("%d\n",strlen((*inp.pairD.current).stringD));
+    struct lisp_object stringListRoot;
+    struct lisp_object stringListCond;
+    struct lisp_object * string = malloc(2*sizeof(struct lisp_object));
+
     if(current[0] =='(' && bM[0] == (strlen(current) - 1)){  //Hopefully this is equiv to saying whole statement is in a bracket!
        current[strlen(current) - 1] = '\0'; //remove last bracket
        ++current; //move pointer to get rid of first bracket
     }
-    printf("%s\n",current);
+
 
     bM = bracketMap(current);
-    printf("%s\n",current);
+
     for(i=0;i<strlen(current);++i){ //loop to locate the unprotected spaces (parenthesis protect spaces)
         if(bM[i]==0 && current[i] == ' '){
             ++d;
@@ -203,28 +211,56 @@ struct lisp_object listeriseString(char * current){
             if(d != 1){
                 unProtSpaceLoc[d- 1] = i;
             }else{
-                printf("Lo\n");
+
                 unProtSpaceLoc[d- 1] = i;
             }
-            printf("%d ",unProtSpaceLoc[d- 1]);
-        }
-    }
-    stringArray = malloc(d*sizeof(stringArray));
-    printf("\n\n");
-    for(i= d-1;i>=0;--i){
-        if(i != 0){
-            unProtSpaceLoc[i] = unProtSpaceLoc[i] - unProtSpaceLoc[i-1]; //turn it into the difference (makes next part easier to write
-        }
-    }
-
-    for(i= d-1;i>=0;--i){
-        if(i != 0){
 
         }
     }
 
+    for(i= d-1;i>0;--i){
+        --unProtSpaceLoc[i];
+    }
 
-    printf("\n");
+    printf("%d\n",d);
+    string = splitString(current,unProtSpaceLoc[d-1]);
+    stringListRoot = new_pair_object(string[1],NULL); //make a list with one element consed onto null
+    (*stringListRoot.pairD).next = malloc(sizeof(struct lisp_object));
+    (*(*stringListRoot.pairD).next) = stringListCond;
+
+    for(i= d-2;i>=0;--i){
+
+        string = splitString(string[0].stringD,unProtSpaceLoc[i]);
+        (*stringListCond.pairD).next = malloc(sizeof(struct lisp_object));
+        (*(*stringListCond.pairD).next) = new_pair_object(string[1],NULL); //wrong wrong wrong weird and wrong!!! (Ok apart from that)
+        stringListCond = (*(*stringListCond.pairD).next);
+
+    }
+    printf("finished listerise\n");
+    (*stringListCond.pairD).next = malloc(sizeof(struct lisp_object));
+    (*(*stringListCond.pairD).next) = new_pair_object(string[0],NULL);
+
+   return stringListRoot;
+}
+
+struct lisp_object * splitString(char * inp, int n){ //returns input after the n'th char and replaces the n'th char in inp with '\0'
+    char * out1;
+    char * out2;
+    struct lisp_object * out = malloc(2*sizeof(struct lisp_object));
+   // n = 5;
+    if(n<= strlen(inp)){
+        out1 = malloc(strlen(inp) - n);
+        strncpy(out1, inp,n +1);
+        out1[n+1] = '\0';
+
+    }
+
+    out2 = inp + n +1;
+    out[0] = new_string_object(out1);
+    out[1] = new_string_object(out2);
+
+
+    return out;
 }
 
 int * bracketMatcher(char * inp){
@@ -242,10 +278,10 @@ int * bracketMatcher(char * inp){
         }else{
             matchMap[i] = -1;
         }
-        printf("%d",matchMap[i]);
+
 
     }
-    printf("\n");
+
    return matchMap;
 }
 
@@ -263,10 +299,10 @@ int depth = 0;
         }else{
             bracketMap[i] = depth;
         }
-    printf("%d",bracketMap[i]);
+
 
     }
-    printf("\n");
+
     return bracketMap;
 }
 
@@ -331,9 +367,9 @@ if(stringBuffer[0]==' ')
 }
 
 void lisp_write(struct lisp_object objOut){
-    //printf("Damn\n");
-    int h = objOut.objectType;
- switch(h){
+
+
+ switch(objOut.objectType){
         case T_string :
             printf("%s\n", objOut.stringD);
             break;
@@ -350,7 +386,8 @@ void lisp_write(struct lisp_object objOut){
             printf("%s\n", (*objOut.proc).opName );
             break;
         case T_pair :
-            printf("You crazy bastard!\n");
+            lisp_write(car(objOut));
+            lisp_write(cdr(objOut));
             break;
        }
 }
@@ -364,7 +401,7 @@ struct lisp_object new_num_object(double d){
     r.numD = d;
     r.proc = NULL;
     r.stringD = NULL;
-    r.pairD = new_cons(NULL,NULL);
+    r.pairD = NULL;
     return r;
 }
 struct lisp_object new_string_object(char *d){
@@ -378,7 +415,7 @@ struct lisp_object new_string_object(char *d){
 
     strcpy(r.stringD,d);
 
-    r.pairD = new_cons(NULL,NULL);
+    r.pairD = NULL;
 
     return r;
 }
@@ -391,7 +428,7 @@ struct lisp_object new_bool_object(int d){
     r.numD = 0;
     r.proc = NULL;
     r.stringD = NULL;
-    r.pairD = new_cons(NULL,NULL);
+    r.pairD = NULL;
 
     return r;
 }
@@ -404,12 +441,12 @@ struct lisp_object new_char_object(char d){
     r.numD = 0;
     r.proc = NULL;
     r.stringD = NULL;
-    r.pairD = new_cons(NULL,NULL);
+    r.pairD = NULL;
 
     return r;
 }
 
-struct lisp_object new_pair_object(struct lisp_object *a,struct lisp_object *b){
+struct lisp_object new_pair_object(struct lisp_object a,struct lisp_object *b){
     struct lisp_object r;
     r.objectType = T_pair;
     r.boolD = 0;
@@ -417,7 +454,9 @@ struct lisp_object new_pair_object(struct lisp_object *a,struct lisp_object *b){
     r.numD = 0;
     r.proc = NULL;
     r.stringD = NULL;
+    //printf("unconsed");
     r.pairD = new_cons(a,b);
+    //printf("Consed");
     return r;
 }
 
@@ -432,13 +471,13 @@ struct lisp_object new_proc_object(char * n,struct lisp_object* (*d)(struct lisp
     strcpy((*(r.proc)).opName,n);
     (*(r.proc)).opPointer = d;
     r.stringD = NULL;
-    r.pairD = new_cons(NULL,NULL);
+    r.pairD = NULL;
     return r;
 }
 
-struct cons new_cons(struct lisp_object *a, struct lisp_object *b){
+struct cons *new_cons(struct lisp_object a, struct lisp_object *b){
     struct cons r;
     r.current = a;
     r.next = b;
-    return r;
+    return &r;
 }
